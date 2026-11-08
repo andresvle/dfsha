@@ -1,0 +1,6 @@
+grpcio==1.66.2
+grpcio-tools==1.66.2
+protobuf==5.27.2
+pysyncobj==0.3.12
+PyJWT==2.9.0
+cryptography==43.0.1

@@ -1,0 +1,5 @@
+certs/
+dfsha.tar.gz
+cluster.env
+__pycache__/
+dfsha/dfsha_pb2*.py

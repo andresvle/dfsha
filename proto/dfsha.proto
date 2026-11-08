@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package dfsha;
+
+// ---------- Plano de control: cliente -> servicio de metadatos (MS) ----------
+
+message Empty {}
+
+message LoginReq { string user = 1; string password = 2; }
+message TokenResp { string token = 1; string uid = 2; int64 expires_at = 3; }
+
+message PathReq { string path = 1; }
+message RemoveReq { string path = 1; bool recursive = 2; }
+
+message DirEntry {
+  string name = 1;
+  bool is_dir = 2;
+  int64 size = 3;
+  int64 version = 4;
+  double mtime = 5;
+}
+message DirListing { repeated DirEntry entries = 1; }
+
+message BlockInfo {
+  int32 index = 1;
+  string block_id = 2;
+  int64 length = 3;
+  string sha256 = 4;
+  repeated string replicas = 5;   // direcciones host:puerto de los DN
+  string token = 6;               // token de bloque firmado por el MS
+}
+
+message FileInfo {
+  string path = 1;
+  bool is_dir = 2;
+  int64 size = 3;
+  int64 version = 4;
+  int64 block_size = 5;
+  string file_sha256 = 6;
+  repeated BlockInfo blocks = 7;
+  double mtime = 8;
+}
+
+message AllocReq {
+  string path = 1;
+  int32 count = 2;          // cuantos bloques nuevos se necesitan
+}
+message UploadPlan {
+  string upload_id = 1;
+  int64 block_size = 2;
+  int32 min_replicas = 3;
+  repeated BlockInfo blocks = 4;   // block_id + pipeline (replicas) + token
+}
+
+message CommitReq {
+  string path = 1;
+  string upload_id = 2;
+  int64 base_version = 3;          // -1 = archivo nuevo / reemplazo sin control
+  int64 fencing_token = 4;         // 0 si no se tomo lock
+  int64 size = 5;
+  string file_sha256 = 6;
+  repeated BlockInfo blocks = 7;   // lista COMPLETA de bloques de la nueva version
+  bool overwrite = 8;
+}
+
+message LockReq { string path = 1; string mode = 2; int32 ttl_s = 3; }
+message Lease { string path = 1; string mode = 2; int64 fencing_token = 3; double expires_at = 4; string holder = 5; }
+message LeaseRef { string path = 1; int64 fencing_token = 2; }
+message Ack { bool ok = 1; string message = 2; }
+
+message ClusterStatus {
+  string node_id = 1;
+  bool is_leader = 2;
+  string leader = 3;
+  repeated string raft_peers = 4;
+  repeated DataNodeState datanodes = 5;
+  int32 under_replicated = 6;
+}
+message DataNodeState { string node_id = 1; string address = 2; string state = 3; double last_heartbeat = 4; int64 blocks = 5; int64 used = 6; }
+
+service MetaService {
+  rpc Login(LoginReq) returns (TokenResp);
+  rpc List(PathReq) returns (DirListing);          // ls
+  rpc Mkdir(PathReq) returns (Ack);                // mkdir
+  rpc Remove(RemoveReq) returns (Ack);             // rm / rmdir
+  rpc Stat(PathReq) returns (FileInfo);            // stat / open (fija version de lectura)
+  rpc AllocateBlocks(AllocReq) returns (UploadPlan); // put / write: bloques nuevos (copia en escritura)
+  rpc Commit(CommitReq) returns (FileInfo);        // close / commit atomico
+  rpc Lock(LockReq) returns (Lease);               // lock / renovar
+  rpc Unlock(LeaseRef) returns (Ack);
+  rpc Status(Empty) returns (ClusterStatus);       // diagnostico / pruebas
+}
+
+// ---------- Plano de control interno: DN -> MS ----------
+
+message HeartbeatReq {
+  string node_id = 1;
+  string address = 2;
+  int64 used = 3;
+  repeated string blocks = 4;     // informe de bloques
+}
+message ReplicateCmd { string block_id = 1; string target = 2; string token = 3; }
+message Commands { repeated ReplicateCmd replicate = 1; repeated string delete = 2; }
+
+service ClusterService {
+  rpc Heartbeat(HeartbeatReq) returns (Commands);
+}
+
+// ---------- Plano de datos: cliente -> DN y DN -> DN ----------
+
+message BlockChunk {
+  // el primer mensaje del stream lleva la cabecera; los siguientes solo data
+  string block_id = 1;
+  string token = 2;
+  string sha256 = 3;
+  repeated string pipeline = 4;   // DN restantes a los que reenviar
+  bytes data = 5;
+}
+message BlockAck { string block_id = 1; repeated string stored_on = 2; string sha256 = 3; int64 length = 4; string error = 5; }
+message GetBlockReq { string block_id = 1; string token = 2; }
+
+service DataService {
+  rpc PutBlock(stream BlockChunk) returns (BlockAck);
+  rpc GetBlock(GetBlockReq) returns (stream BlockChunk);
+}

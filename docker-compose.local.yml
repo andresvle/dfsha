@@ -1,0 +1,65 @@
+# Cluster completo en una sola maquina (solo para desarrollo y pruebas locales).
+# En AWS cada servicio corre en su propia instancia EC2 (ver deploy/).
+x-common: &common
+  image: dfsha:latest
+  build: .
+  volumes:
+    - ./certs:/certs:ro
+  environment: &env
+    DFSHA_JWT_SECRET: local-jwt-secret
+    DFSHA_BLOCK_SECRET: local-block-secret
+    DFSHA_RAFT_PASSWORD: local-raft-password
+    DFSHA_BLOCK_SIZE: "4194304"
+    DFSHA_META: meta.dfsha.internal:7000
+    DFSHA_SUSPECT_AFTER: "6"
+    DFSHA_DEAD_AFTER: "12"
+    DFSHA_GC_GRACE: "30"
+
+x-ms: &ms
+  <<: *common
+  command: python -m dfsha.meta_server
+
+x-dn: &dn
+  <<: *common
+  command: python -m dfsha.data_server
+
+services:
+  ms-1:
+    <<: *ms
+    hostname: ms-1
+    networks: { dfsha: { aliases: [meta.dfsha.internal] } }
+    environment: { <<: *env, DFSHA_NODE_ID: ms-1, DFSHA_RAFT_SELF: "ms-1:7001", DFSHA_RAFT_PEERS: "ms-2:7001,ms-3:7001" }
+  ms-2:
+    <<: *ms
+    hostname: ms-2
+    networks: { dfsha: { aliases: [meta.dfsha.internal] } }
+    environment: { <<: *env, DFSHA_NODE_ID: ms-2, DFSHA_RAFT_SELF: "ms-2:7001", DFSHA_RAFT_PEERS: "ms-1:7001,ms-3:7001" }
+  ms-3:
+    <<: *ms
+    hostname: ms-3
+    networks: { dfsha: { aliases: [meta.dfsha.internal] } }
+    environment: { <<: *env, DFSHA_NODE_ID: ms-3, DFSHA_RAFT_SELF: "ms-3:7001", DFSHA_RAFT_PEERS: "ms-1:7001,ms-2:7001" }
+  dn-1:
+    <<: *dn
+    networks: [dfsha]
+    environment: { <<: *env, DFSHA_NODE_ID: dn-1, DFSHA_ADVERTISE: "dn-1:8000" }
+  dn-2:
+    <<: *dn
+    networks: [dfsha]
+    environment: { <<: *env, DFSHA_NODE_ID: dn-2, DFSHA_ADVERTISE: "dn-2:8000" }
+  dn-3:
+    <<: *dn
+    networks: [dfsha]
+    environment: { <<: *env, DFSHA_NODE_ID: dn-3, DFSHA_ADVERTISE: "dn-3:8000" }
+  dn-4:
+    <<: *dn
+    networks: [dfsha]
+    environment: { <<: *env, DFSHA_NODE_ID: dn-4, DFSHA_ADVERTISE: "dn-4:8000" }
+  client:
+    <<: *common
+    command: sleep infinity
+    networks: [dfsha]
+    working_dir: /work
+
+networks:
+  dfsha: {}
