@@ -1,6 +1,7 @@
 # DFSha · Proyecto 1 — Fase II: implementación grupal
 
-Andrés Felipe Vélez Estrada (000551866) · Juan Sebastián Quintero Hernández (000492758)
+Andrés Felipe Vélez Estrada (000551866) · Juan Sebastián Quintero Hernández (000492758) · Emmanuel Posada Cárdenas (000550203)
+
 Arquitecturas de Nube y Sistemas Distribuidos 2026-2 · Opción 1 (cliente/servidor S2S)
 
 ## 1. Matriz comparativa de las propuestas individuales
