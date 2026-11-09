@@ -3,7 +3,9 @@
 Prototipo grupal de la Opción 1 (cliente/servidor con servicio distribuido entre servidores).
 Arquitectura, decisiones y resultados: [docs/INFORME_GRUPAL.md](docs/INFORME_GRUPAL.md).
 
-Integrantes: Andrés Felipe Vélez Estrada (000551866) · Juan Sebastián Quintero Hernández (000492758)
+Integrantes: Andrés Felipe Vélez Estrada (000551866) · Juan Sebastián Quintero Hernández (000492758) · Emmanuel Posada Cárdenas (550203)
+
+Video demostrativo: [ver o descargar el MP4](docs/videos/DFSha_demostracion_final.mp4).
 
 ## Componentes
 
