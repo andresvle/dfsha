@@ -1,0 +1,3 @@
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+[PASA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados

@@ -1,0 +1,88 @@
+
+=================== 5. CONSISTENCIA (replica desconectada durante una escritura) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- se desconecta dn-3 y se escribe
+dfsha
+
+2026-11-09 01:15:31,189 WARNING [client] DN 172.31.6.145:8000 no respondio para b-2eaa21ae5c; probando el siguiente
+put consist.bin -> /users/andres/consist.bin: 24.0 MB en 3 bloques, v3, 0.76 s (31.6 MB/s)
+sha256 d3a8780a806b30c38afac4cd1cae59965695408c382416d4bae7fa50636b71b3
+  bloque 0: b-29b7291f6b22     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000']
+  bloque 1: b-2eaa21ae5c4c     8.0 MB  replicas=['172.31.0.234:8000', '172.31.13.18:8000']
+  bloque 2: b-76c6fb915e6b     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+--- lectores: la version confirmada se lee completa desde las replicas vivas
+get /users/andres/consist.bin -> consist_leido.bin: 24.0 MB, v3, 0.33 s (71.9 MB/s), sha256 verificado
+contenido identico
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+--- dn-3 regresa: se reincorpora y el gestor completa R=3
+dfsha
+
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=245  usado=1.8 GB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=245  usado=1.8 GB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=229  usado=1.7 GB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=245  usado=1.8 GB
+  bloque 0: b-29b7291f6b22     8.0 MB  replicas=['172.31.0.234:8000', '172.31.11.233:8000', '172.31.13.18:8000']
+  bloque 1: b-2eaa21ae5c4c     8.0 MB  replicas=['172.31.0.234:8000', '172.31.11.233:8000', '172.31.13.18:8000']
+  bloque 2: b-76c6fb915e6b     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+[PASA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados
+
+=================== RESUMEN ===================
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+[PASA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados
+pasan: 3  fallan: 0
+
+=================== 4. REPLICACION Y FALLOS (caida de un DN y del lider MS) ===================
+Sesion iniciada como andres; directorio /users/andres
+  bloque 0: b-097c6efa3a97     8.0 MB  replicas=['172.31.0.234:8000', '172.31.6.145:8000', '172.31.13.18:8000', '172.31.11.233:8000']
+  bloque 1: b-ac6d56a2babd     8.0 MB  replicas=['172.31.6.145:8000', '172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 2: b-3be4dac4605b     8.0 MB  replicas=['172.31.6.145:8000', '172.31.13.18:8000', '172.31.0.234:8000', '172.31.11.233:8000']
+--- se detiene dn-2
+dfsha
+
+get /users/andres/datos/grande.bin -> tras_caida.bin: 100.0 MB, v3, 1.10 s (90.8 MB/s), sha256 verificado
+259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b  tras_caida.bin
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+--- esperando deteccion (DEAD) y re-replicacion...
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=242  usado=1.8 GB
+  dn-2   172.31.0.234:8000      DEAD     bloques=245  usado=1.8 GB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=244  usado=1.8 GB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=242  usado=1.8 GB
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=242  usado=1.8 GB
+  dn-2   172.31.0.234:8000      DEAD     bloques=245  usado=1.8 GB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=244  usado=1.8 GB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=242  usado=1.8 GB
+[PASA] fallos: dn-2 detectado como DEAD
+[PASA] fallos: re-replicacion completa (0 bloques sub-replicados)
+write /dev/stdout: broken pipe
+--- se detiene el MS lider: ms-1.dfsha.internal:7000
+dfsha
+
+metadatos disponibles otra vez en .495503938 s
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 85
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+--- se restauran los nodos
+dfsha
+
+dfsha
+
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=243  usado=1.8 GB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=245  usado=1.8 GB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=245  usado=1.8 GB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=243  usado=1.8 GB
+[PASA] fallos: tras restaurar, los 4 DN ALIVE
+
+=================== RESUMEN ===================
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+[PASA] fallos: dn-2 detectado como DEAD
+[PASA] fallos: re-replicacion completa (0 bloques sub-replicados)
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+[PASA] fallos: tras restaurar, los 4 DN ALIVE
+pasan: 6  fallan: 0

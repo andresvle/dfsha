@@ -1,0 +1,6 @@
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+[PASA] fallos: dn-2 detectado como DEAD
+[PASA] fallos: re-replicacion completa (0 bloques sub-replicados)
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+[PASA] fallos: tras restaurar, los 4 DN ALIVE

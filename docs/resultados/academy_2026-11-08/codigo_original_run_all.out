@@ -1,0 +1,188 @@
+
+=================== 1. CARGA Y RECUPERACION (archivo grande particionado, hash identico) ===================
+Sesion iniciada como andres; directorio /users/andres
+28937a160e3895f0d4c5282884c7e604efa9d747a737b9d6d91a2c3d5a341bd3  grande.bin
+put grande.bin -> /users/andres/datos/grande.bin: 100.0 MB en 13 bloques, v2, 1.93 s (51.8 MB/s)
+sha256 28937a160e3895f0d4c5282884c7e604efa9d747a737b9d6d91a2c3d5a341bd3
+ruta: /users/andres/datos/grande.bin
+tipo: archivo
+tamano: 104857600 B  version: 2  sha256: 28937a160e3895f0d4c5282884c7e604efa9d747a737b9d6d91a2c3d5a341bd3
+  bloque 0: b-05a4470505e6     8.0 MB  replicas=['172.31.11.233:8000', '172.31.6.145:8000', '172.31.13.18:8000']
+  bloque 1: b-65c5b05356b3     8.0 MB  replicas=['172.31.13.18:8000', '172.31.0.234:8000', '172.31.6.145:8000']
+  bloque 2: b-8ed32d9fe0e4     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 3: b-e6f2eba093c6     8.0 MB  replicas=['172.31.0.234:8000', '172.31.6.145:8000', '172.31.11.233:8000']
+  bloque 4: b-9ea2c97ff002     8.0 MB  replicas=['172.31.11.233:8000', '172.31.6.145:8000', '172.31.13.18:8000']
+  bloque 5: b-0ee1345c52f2     8.0 MB  replicas=['172.31.13.18:8000', '172.31.0.234:8000', '172.31.6.145:8000']
+  bloque 6: b-4cfe1e9d3ff1     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 7: b-dadbd2e3a0f6     8.0 MB  replicas=['172.31.6.145:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 8: b-a77913c95dd9     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.6.145:8000']
+write /dev/stdout: broken pipe
+get /users/andres/datos/grande.bin -> recuperado.bin: 100.0 MB, v2, 1.09 s (91.8 MB/s), sha256 verificado
+28937a160e3895f0d4c5282884c7e604efa9d747a737b9d6d91a2c3d5a341bd3  recuperado.bin
+RESULTADO: hash IDENTICO
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=25   usado=152.0 MB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=24   usado=144.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=25   usado=152.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=25   usado=152.0 MB
+
+=================== 2. ACCESO RF3 (open/read/write/lock/close con la semantica declarada) ===================
+Sesion iniciada como andres; directorio /users/andres
+put rf3.txt -> /users/andres/rf3.txt: 55 B en 1 bloques, v4, 0.13 s (0.0 MB/s)
+sha256 c2c76618a04c1461acb890e35e33d67ce1a6af1a0e712422e629d80cb22e0716
+--- read(offset=0, n=20)
+Hola DFSha. Linea or
+--- write(offset=5) modificacion parcial con lock
+lock EXCLUSIVE concedido, fencing_token=3
+write confirmado: /users/andres/rf3.txt v5, 55 B
+Hola MUNDO. Linea original del archivo de pruebas RF3.
+
+--- append (anexado)
+append confirmado: /users/andres/rf3.txt v6, 62 B
+Hola MUNDO. Linea original del archivo de pruebas RF3.
+ +anexo
+ruta: /users/andres/rf3.txt
+tipo: archivo
+tamano: 62 B  version: 6  sha256: 85afb3f7ca2beed84873cef78e59a124607b10ded1451c659f53910a445b2d87
+  bloque 0: b-447a6ac09d10       62 B  replicas=['172.31.0.234:8000', '172.31.11.233:8000', '172.31.6.145:8000']
+
+=================== 3. CONCURRENCIA (dos clientes sobre el mismo archivo/bloque) ===================
+Sesion iniciada como andres; directorio /users/andres
+put conc.txt -> /users/andres/conc.txt: 41 B en 1 bloques, v4, 0.14 s (0.0 MB/s)
+sha256 3ef4d655ed1629fe130e2db4fc2f8c81db29f4d724bcb84859139844e76e0df2
+--- cliente A toma el lock y retiene 8 s; cliente B intenta escribir el mismo bloque
+[B] ERROR LOCKED: LOCKED {'holder': 'c-9ed6dad4', 'expires': 1794184271.3468692}
+[A] lock EXCLUSIVE concedido, fencing_token=4
+[A] esperando 8.0 s antes de confirmar (con el lease tomado)...
+[A] write confirmado: /users/andres/conc.txt v5, 41 B
+--- contenido final (gana A; B fue rechazado con LOCKED):
+AAAAA00000000000000000000000000000000000
+
+--- sin locks: B abre la version v, A confirma v+1 antes que B -> control optimista (VERSION_CONFLICT)
+[A2] write confirmado: /users/andres/conc.txt v6, 41 B
+[B2] esperando 6.0 s antes de confirmar...
+[B2] ERROR VERSION_CONFLICT: VERSION_CONFLICT {'current_version': 6}
+AAAAA00000CCCCC0000000000000000000000000
+
+
+=================== 6. SEGURIDAD (acceso autorizado/denegado, canal y almacenamiento cifrados) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- captura del trafico hacia dn-1 mientras se sube un archivo con texto conocido
+put secreto.txt -> /users/andres/secreto.txt: 18 B en 1 bloques, v2, 0.11 s (0.0 MB/s)
+sha256 64be5e48a4d077948c4317d12e32ca6e273c12176c65d0c79362c92915e82713
+captura en dn-1 (puerto 8000): bytes_capturados=27930 lineas_con_texto_plano=0
+--- juan intenta leer el archivo de andres
+Sesion iniciada como juan; directorio /users/juan
+ERROR NOT_OWNER: NOT_OWNER /users/andres/secreto.txt esta fuera de /users/juan
+ERROR NOT_OWNER: NOT_OWNER /users/andres esta fuera de /users/juan
+--- contrasena incorrecta
+ERROR BAD_CREDENTIALS: BAD_CREDENTIALS
+--- conexiones sin certificado de cliente o sin TLS (mTLS exige certificado)
+TLS sin certificado de cliente: RECHAZADO (UNAVAILABLE)
+texto plano (sin TLS): RECHAZADO (UNAVAILABLE)
+--- bloque en disco del DN (cifrado AES-256-GCM, no aparece el texto plano):
+texto plano NO encontrado en disco
+
+Sesion iniciada como andres; directorio /users/andres
+
+=================== 5. CONSISTENCIA (replica desconectada durante una escritura) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- se desconecta dn-3 y se escribe
+dfsha
+
+put consist.bin -> /users/andres/consist.bin: 24.0 MB en 3 bloques, v1, 0.58 s (41.1 MB/s)
+sha256 3ebdc878d296011086af8331649d93bf08bed21be2d4736ae9cae9445b0968f3
+  bloque 0: b-175cb395d5c8     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+  bloque 1: b-640742ee90bb     8.0 MB  replicas=['172.31.11.233:8000', '172.31.0.234:8000', '172.31.13.18:8000']
+  bloque 2: b-cb54dd354f77     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+--- lectores: la version confirmada se lee completa desde las replicas vivas
+get /users/andres/consist.bin -> consist_leido.bin: 24.0 MB, v1, 0.28 s (84.8 MB/s), sha256 verificado
+contenido identico
+--- dn-3 regresa: se reincorpora y el gestor completa R=3
+dfsha
+
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=24   usado=124.0 MB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=24   usado=124.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=16   usado=76.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=23   usado=124.0 MB
+  bloque 0: b-175cb395d5c8     8.0 MB  replicas=['172.31.0.234:8000', '172.31.11.233:8000', '172.31.13.18:8000']
+  bloque 1: b-640742ee90bb     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 2: b-cb54dd354f77     8.0 MB  replicas=['172.31.11.233:8000', '172.31.0.234:8000', '172.31.13.18:8000']
+
+=================== 4. REPLICACION Y FALLOS (caida de un DN y del lider MS) ===================
+Sesion iniciada como andres; directorio /users/andres
+  bloque 0: b-05a4470505e6     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.6.145:8000', '172.31.0.234:8000']
+  bloque 1: b-65c5b05356b3     8.0 MB  replicas=['172.31.6.145:8000', '172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 2: b-8ed32d9fe0e4     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+--- se detiene dn-2
+dfsha
+
+get /users/andres/datos/grande.bin -> tras_caida.bin: 100.0 MB, v2, 1.15 s (87.1 MB/s), sha256 verificado
+28937a160e3895f0d4c5282884c7e604efa9d747a737b9d6d91a2c3d5a341bd3  tras_caida.bin
+--- esperando deteccion (DEAD) y re-replicacion...
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=24   usado=124.0 MB
+  dn-2   172.31.0.234:8000      DEAD     bloques=24   usado=124.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=23   usado=124.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=23   usado=124.0 MB
+MS consultado: ms-3  lider: ms-3.dfsha.internal:7000  bloques sub-replicados: 0
+  dn-1   172.31.11.233:8000     ALIVE    bloques=24   usado=124.0 MB
+  dn-2   172.31.0.234:8000      DEAD     bloques=24   usado=124.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=23   usado=124.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=23   usado=124.0 MB
+--- se detiene el MS lider: ms-3.dfsha.internal:7000
+write /dev/stdout: broken pipe
+dfsha
+
+metadatos disponibles otra vez en .492008288 s
+MS consultado: ms-2  lider: ms-2.dfsha.internal:7000  bloques sub-replicados: 22
+put rf3.txt -> /users/andres/despues_de_eleccion.txt: 55 B en 1 bloques, v1, 0.17 s (0.0 MB/s)
+sha256 c2c76618a04c1461acb890e35e33d67ce1a6af1a0e712422e629d80cb22e0716
+--- se restauran los nodos
+dfsha
+
+dfsha
+
+
+=================== 7. RENDIMIENTO (latencia y throughput bajo dos condiciones) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- latencia de metadatos (20 x stat)
+stat promedio (incluye arranque del contenedor CLI): .531 s
+condicion   tamano_mb  operacion  segundos      mb_s
+paralelo=1  16         put        1.257453025   12.72
+paralelo=1  16         get        .783472034    20.42
+paralelo=4  16         put        1.031894966   15.50
+paralelo=4  16         get        .688545971    23.23
+paralelo=1  16         put        1.234218565   12.96
+paralelo=1  16         get        .743613257    21.51
+paralelo=4  16         put        1.000987470   15.98
+paralelo=4  16         get        .721664024    22.17
+paralelo=1  16         put        1.217856842   13.13
+paralelo=1  16         get        .736129403    21.73
+paralelo=4  16         put        .999007401    16.01
+paralelo=4  16         get        .744958824    21.47
+paralelo=1  64         put        3.101733883   20.63
+paralelo=1  64         get        1.461870835   43.77
+paralelo=4  64         put        1.906604521   33.56
+paralelo=4  64         get        1.211919931   52.80
+paralelo=1  64         put        3.126353245   20.47
+paralelo=1  64         get        1.548269408   41.33
+paralelo=4  64         put        1.723595348   37.13
+paralelo=4  64         get        1.224004086   52.28
+paralelo=1  64         put        3.132782419   20.42
+paralelo=1  64         get        1.470524331   43.52
+paralelo=4  64         put        1.698269392   37.68
+paralelo=4  64         get        1.300261550   49.22
+paralelo=1  256        put        12.997165193  19.69
+paralelo=1  256        get        7.510819374   34.08
+paralelo=4  256        put        7.197533162   35.56
+paralelo=4  256        get        5.105657669   50.14
+paralelo=1  256        put        12.371790677  20.69
+paralelo=1  256        get        6.313898039   40.54
+paralelo=4  256        put        7.389335285   34.64
+paralelo=4  256        get        5.586992321   45.82
+paralelo=1  256        put        12.956364799  19.75
+paralelo=1  256        get        7.799612979   32.82
+paralelo=4  256        put        7.332772020   34.91
+paralelo=4  256        get        5.225207685   48.99

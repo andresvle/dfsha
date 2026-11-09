@@ -32,15 +32,46 @@ def block_path(block_id):
     return os.path.join(BLOCKS, block_id)
 
 
+_block_locks = {}
+_block_locks_mx = threading.Lock()
+
+
+def _lock_for(block_id):
+    with _block_locks_mx:
+        return _block_locks.setdefault(block_id, threading.Lock())
+
+
+class BlockExists(Exception):
+    pass
+
+
+def _fsync_dir(path):
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:          # Windows no permite abrir directorios
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def store(block_id, data):
-    """Escritura atomica: tmp + fsync + rename."""
-    tmp = os.path.join(TMP, f"{block_id}.{os.getpid()}.{threading.get_ident()}")
-    payload = common.encrypt_block(data) if ENCRYPT else data
-    with open(tmp, "wb") as f:
-        f.write(payload)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, block_path(block_id))
+    """Escritura atomica e idempotente: tmp + fsync + rename + fsync del directorio.
+    Un bloque es inmutable: repetir los mismos bytes se acepta; bytes distintos se rechazan."""
+    with _lock_for(block_id):
+        if os.path.exists(block_path(block_id)):
+            if common.sha256(load(block_id)) == common.sha256(data):
+                return
+            raise BlockExists(block_id)
+        tmp = os.path.join(TMP, f"{block_id}.{os.getpid()}.{threading.get_ident()}")
+        payload = common.encrypt_block(data) if ENCRYPT else data
+        with open(tmp, "wb") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, block_path(block_id))
+        _fsync_dir(BLOCKS)
 
 
 def load(block_id):
@@ -79,28 +110,29 @@ class DataService(rpc.DataServiceServicer):
         digest = common.sha256(data)
         if digest != header.sha256:
             ctx.abort(grpc.StatusCode.DATA_LOSS, "CHECKSUM_MISMATCH")
-        store(header.block_id, data)
+        try:
+            store(header.block_id, data)
+        except BlockExists:
+            log.warning("RECHAZO: %s ya existe con otro contenido (bloques inmutables)", header.block_id[:12])
+            ctx.abort(grpc.StatusCode.ALREADY_EXISTS, "BLOCK_EXISTS contenido distinto para un block_id existente")
         stored = [ADVERTISE]
-        # reenvio en pipeline al siguiente DN; si falla, el bloque igual queda en este nodo
-        if header.pipeline:
-            nxt, rest = header.pipeline[0], list(header.pipeline[1:])
+        receipts = [common.block_receipt(header.block_id, ADVERTISE, digest, len(data))]
+        # reenvio en pipeline al siguiente DN; si falla, se salta ese nodo y se sigue con el resto
+        rest = list(header.pipeline)
+        while rest:
+            nxt, rest = rest[0], rest[1:]
             try:
                 stub = rpc.DataServiceStub(common.channel(nxt, "node"))
                 ack = stub.PutBlock(stream_block(header.block_id, header.token, data, rest), timeout=60)
                 stored.extend(ack.stored_on)
+                receipts.extend(ack.receipts)
+                break
             except grpc.RpcError as e:
                 log.warning("pipeline: no se pudo reenviar %s a %s (%s); se sigue con %d copias",
                             header.block_id[:12], nxt, e.code().name, len(stored))
-                # intenta saltar el nodo caido y seguir con el resto del pipeline
-                if rest:
-                    try:
-                        stub = rpc.DataServiceStub(common.channel(rest[0], "node"))
-                        ack = stub.PutBlock(stream_block(header.block_id, header.token, data, rest[1:]), timeout=60)
-                        stored.extend(ack.stored_on)
-                    except grpc.RpcError:
-                        pass
         log.info("bloque %s guardado (%d B), copias=%s", header.block_id[:12], len(data), stored)
-        return pb.BlockAck(block_id=header.block_id, stored_on=stored, sha256=digest, length=len(data))
+        return pb.BlockAck(block_id=header.block_id, stored_on=stored, sha256=digest, length=len(data),
+                           receipts=receipts)
 
     def GetBlock(self, req, ctx):
         if not (common.check_block_token(req.token, req.block_id, "R")

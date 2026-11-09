@@ -136,6 +136,30 @@ def check_block_token(token, block_id, op):
     return hmac.compare_digest(hmac.new(BLOCK_TOKEN_SECRET, msg, hashlib.sha256).hexdigest(), sig)
 
 
+def block_receipt(block_id, address, digest, length):
+    """Recibo que firma un DN al guardar un bloque: el MS solo confirma copias con recibo valido."""
+    msg = f"stored|{block_id}|{address}|{digest}|{length}".encode()
+    return f"{address}|{hmac.new(BLOCK_TOKEN_SECRET, msg, hashlib.sha256).hexdigest()}"
+
+
+def check_receipt(receipt, block_id, digest, length):
+    """Devuelve la direccion del DN si el recibo es valido para ese bloque, hash y tamano."""
+    try:
+        address, sig = receipt.rsplit("|", 1)
+    except ValueError:
+        return None
+    return address if hmac.compare_digest(block_receipt(block_id, address, digest, length), receipt) else None
+
+
+def peer_role(ctx):
+    """Rol del extremo segun el CN de su certificado mTLS ('node' o 'client'); None sin TLS."""
+    if not TLS_ENABLED:
+        return "node"
+    cns = ctx.auth_context().get("x509_common_name") or [b""]
+    cn = cns[0].decode(errors="replace")
+    return cn[len("dfsha-"):] if cn.startswith("dfsha-") else cn
+
+
 # ------------------------------------------------- cifrado en reposo ------
 def _kek():
     raw = os.environ.get("DFSHA_KEK")

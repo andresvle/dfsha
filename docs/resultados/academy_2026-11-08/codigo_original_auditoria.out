@@ -1,0 +1,16 @@
+[PASA] A1 juan no puede stat archivo de andres :: NOT_OWNER
+[PASA] A2 ruta con .. hacia otro usuario rechazada :: NOT_OWNER
+[FALLA] F01 commit con upload_id inventado, bloque inexistente y replicas repetidas se rechaza :: OK
+[FALLA] F02 juan no puede publicar ni leer un bloque de andres conociendo su id :: commit=OK lectura_robada=True
+[FALLA] F03 un block_id existente no acepta contenido distinto :: segundo_put=OK contenido_final=b'B'
+[PASA] S1 DN rechaza token de bloque falsificado :: PERMISSION_DENIED BAD_BLOCK_TOKEN
+[FALLA] R01a Status exige autenticacion (JWT) :: OK
+[FALLA] R01b certificado de cliente no puede registrar un DN falso por Heartbeat :: OK
+   DN registrados tras el ataque: ['dn-1', 'dn-2', 'dn-3', 'dn-4', 'dn-falso']
+[FALLA] F06 write muy lejos del final termina con resultado o DFSError controlado :: IndexError list index out of range
+   esperando 80 s (GC_GRACE=60)...
+2026-11-09 00:40:09,642 WARNING [client] replica 172.31.13.18:8000 fallo para b-1b710746c6 (NOT_FOUND); se usa la siguiente
+2026-11-09 00:40:09,651 WARNING [client] replica 172.31.11.233:8000 fallo para b-1b710746c6 (NOT_FOUND); se usa la siguiente
+2026-11-09 00:40:09,654 WARNING [client] replica 172.31.6.145:8000 fallo para b-1b710746c6 (NOT_FOUND); se usa la siguiente
+[FALLA] F04 lector con open() previo sigue leyendo su version tras reemplazo + GC :: BLOCK_UNAVAILABLE
+RESUMEN A1=PASA A2=PASA F01=FALLA F02=FALLA F03=FALLA S1=PASA R01a=FALLA R01b=FALLA F06=FALLA F04=FALLA

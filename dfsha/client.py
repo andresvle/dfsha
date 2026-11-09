@@ -132,11 +132,16 @@ class Client:
         def work(i):
             for attempt in range(3):
                 pb_ = plan.blocks[i] if attempt == 0 else self._meta(
-                    "AllocateBlocks", pb.AllocReq(path=path, count=1)).blocks[0]
-                ack = self._put_block(pb_, chunks[i])
+                    "AllocateBlocks", pb.AllocReq(path=path, count=1, upload_id=plan.upload_id)).blocks[0]
+                try:
+                    ack = self._put_block(pb_, chunks[i])
+                except DFSError as e:
+                    log.warning("bloque %d: %s; se pide otro pipeline", i, e)
+                    continue
                 if len(ack.stored_on) >= plan.min_replicas:
                     results[i] = pb.BlockInfo(index=i, block_id=ack.block_id, length=ack.length,
-                                              sha256=ack.sha256, replicas=list(ack.stored_on))
+                                              sha256=ack.sha256, replicas=list(ack.stored_on),
+                                              receipts=list(ack.receipts))
                     return
                 log.warning("bloque %d solo en %d copias; se pide otro pipeline", i, len(ack.stored_on))
             raise DFSError("INSUFFICIENT_REPLICAS", f"bloque {i}")
@@ -256,7 +261,17 @@ class DFile:
             raise DFSError("READ_ONLY", "archivo abierto en modo lectura")
         if self.mode == "a":
             offset = self.size
+        if offset < 0:
+            raise DFSError("BAD_OFFSET", "offset negativo")
         bs = common.BLOCK_SIZE
+        # escribir mas alla del final: el hueco se rellena con ceros (bloques completos nuevos)
+        last = (self.size - 1) // bs if self.size else -1
+        for gap in range(last + 1, offset // bs):
+            if gap not in self.dirty:
+                self.dirty[gap] = b"\0" * bs
+        if last >= 0 and offset // bs > last and last not in self.dirty:
+            blk = self._block_bytes(last)
+            self.dirty[last] = blk + b"\0" * (bs - len(blk))
         pos = 0
         while pos < len(data):
             abs_pos = offset + pos
@@ -280,7 +295,7 @@ class DFile:
         for i in range(nblocks):
             b = new_by_idx.get(i) or self.blocks[i]
             final.append(pb.BlockInfo(index=i, block_id=b.block_id, length=b.length,
-                                      sha256=b.sha256, replicas=list(b.replicas)))
+                                      sha256=b.sha256, replicas=list(b.replicas), receipts=list(b.receipts)))
         full = hashlib.sha256()
         for i in range(nblocks):
             full.update(self._block_bytes(i))

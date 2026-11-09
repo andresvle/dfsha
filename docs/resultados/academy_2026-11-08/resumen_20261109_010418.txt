@@ -1,0 +1,27 @@
+[PASA] carga: hash del archivo recuperado identico al original
+[PASA] carga: archivo particionado en varios bloques (13)
+[PASA] rf3: read(0,20) devuelve el prefijo
+[PASA] rf3: write parcial + append reflejados en el contenido final
+[PASA] rf3: anexo presente al final
+[PASA] concurrencia: B recibe LOCKED mientras A tiene el lease
+[PASA] concurrencia: gana A (AAAAA) y no se mezclan bytes de B
+[PASA] concurrencia: escritor con version vieja recibe VERSION_CONFLICT
+[PASA] concurrencia: la escritura rechazada no aparece (sin DDDDD)
+[PASA] seguridad: trafico capturado en el puerto 8000 sin texto plano
+[PASA] seguridad: juan no puede leer ni listar el espacio de andres (NOT_OWNER)
+[PASA] seguridad: contrasena incorrecta rechazada (BAD_CREDENTIALS)
+[PASA] seguridad: conexiones sin certificado y en texto plano rechazadas
+[PASA] seguridad: el texto plano no aparece en ningun bloque en disco
+[PASA] seguridad: el cliente no tiene secretos del cluster ni clave de nodo/CA
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+[FALLA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+[PASA] fallos: dn-2 detectado como DEAD
+[FALLA] fallos: re-replicacion completa (0 bloques sub-replicados)
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+[PASA] fallos: tras restaurar, los 4 DN ALIVE
+[PASA] auditoria: todas las comprobaciones de seguridad e integridad pasan
+[PASA] regresion: RF2/RF3, concurrencia y ataques con sesion valida
+[PASA] durabilidad: el ultimo commit sobrevive al reinicio abrupto de los 3 MS

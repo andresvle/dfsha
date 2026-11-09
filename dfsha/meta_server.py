@@ -16,6 +16,7 @@ from concurrent import futures
 
 import grpc
 from pysyncobj import SyncObj, SyncObjConf, replicated
+from pysyncobj import journal as _journal
 from pysyncobj.syncobj import SyncObjException
 
 from dfsha import common
@@ -32,7 +33,27 @@ DATA_DIR = os.environ.get("DFSHA_DATA", "/data")
 SUSPECT_AFTER = float(os.environ.get("DFSHA_SUSPECT_AFTER", "10"))
 DEAD_AFTER = float(os.environ.get("DFSHA_DEAD_AFTER", "20"))
 GC_GRACE = float(os.environ.get("DFSHA_GC_GRACE", "60"))
+PIN_TTL = float(os.environ.get("DFSHA_PIN_TTL", "600"))   # vida de la instantanea de un open()
+USE_JOURNAL = os.environ.get("DFSHA_JOURNAL", "1") == "1"
 USERS = {}
+
+
+def _resizable_write(self, offset, values):
+    """Correccion de pysyncobj 0.3.12: ResizableFile.write solo duplicaba el mmap una vez, asi que
+    una entrada Raft mas grande que el archivo actual fallaba con 'mmap slice assignment' (la causa
+    del ADR-2). Aqui se crece hasta que la entrada cabe."""
+    need = offset + len(values)
+    while need > self._ResizableFile__mm.size():
+        cur = self._ResizableFile__mm.size()
+        new = max(int(cur * self._ResizableFile__resizeFactor), need)
+        try:
+            self._ResizableFile__mm.resize(new)
+        except SystemError:
+            self._ResizableFile__extand(new - cur)
+    self._ResizableFile__mm[offset:need] = values
+
+
+_journal.ResizableFile.write = _resizable_write
 for item in os.environ.get("DFSHA_USERS", "andres:andres123,juan:juan123").split(","):
     name, pwd = item.split(":", 1)
     USERS[name] = common.hash_password(pwd)
@@ -46,8 +67,9 @@ class MetaState(SyncObj):
         os.makedirs(DATA_DIR, exist_ok=True)
         conf = SyncObjConf(
             password=os.environ.get("DFSHA_RAFT_PASSWORD", "dev-raft-password"),
-            # el journal en disco de pysyncobj (mmap) falla con entradas grandes; se persiste con
-            # instantaneas periodicas y la durabilidad la da la replicacion en mayoria (2 de 3)
+            # journal en disco (cada entrada se escribe antes de aplicarse) + instantaneas periodicas;
+            # asi un commit confirmado sobrevive al reinicio simultaneo de los 3 MS
+            journalFile=os.path.join(DATA_DIR, "raft.journal") if USE_JOURNAL else None,
             fullDumpFile=os.path.join(DATA_DIR, "raft.dump"),
             logCompactionMinTime=20,     # instantanea cada ~20 s si hubo cambios
             logCompactionMinEntries=200,
@@ -189,8 +211,9 @@ class Cluster:
         self.dns = {}          # node_id -> {address, last, used, blocks:set}
         self.commands = {}     # node_id -> {"replicate": [...], "delete": [...]}
         self.pending_gc = {}   # block_id -> desde cuando no esta referenciado
-        self.uploads = {}      # upload_id -> {path, expires}
+        self.uploads = {}      # upload_id -> {uid, path, blocks:set, expires}
         self.inflight = {}     # (block_id, target) -> instante de la orden
+        self.pins = {}         # block_id -> vencimiento: bloques de versiones abiertas (open/stat)
         self.rotation = 0
         self.lock = threading.Lock()
 
@@ -335,6 +358,11 @@ class MetaService(rpc.MetaServiceServicer, rpc.ClusterServiceServicer):
             ctx.abort(grpc.StatusCode.NOT_FOUND, "NO_SUCH_PATH")
         if e["type"] == "dir":
             return pb.FileInfo(path=path, is_dir=True, mtime=e["mtime"])
+        # open()/stat fija una instantanea: sus bloques no se recolectan durante PIN_TTL
+        until = time.time() + PIN_TTL
+        with self.c.lock:
+            for b in e["blocks"]:
+                self.c.pins[b["block_id"]] = max(self.c.pins.get(b["block_id"], 0), until)
         return pb.FileInfo(path=path, is_dir=False, size=e["size"], version=e["version"],
                            block_size=common.BLOCK_SIZE, file_sha256=e["sha256"], mtime=e["mtime"],
                            blocks=[self._block_info(i, b, "R") for i, b in enumerate(e["blocks"])])
@@ -344,7 +372,10 @@ class MetaService(rpc.MetaServiceServicer, rpc.ClusterServiceServicer):
         uid = self._uid(ctx)
         path = self._path(ctx, uid, req.path)
         now = time.time()
-        upload_id = "up-" + uuid.uuid4().hex[:8]
+        upload_id = req.upload_id or "up-" + uuid.uuid4().hex[:12]
+        prev = self.c.uploads.get(upload_id)
+        if req.upload_id and (prev is None or prev["uid"] != uid or prev["path"] != path):
+            ctx.abort(grpc.StatusCode.FAILED_PRECONDITION, f"UNKNOWN_UPLOAD {req.upload_id}")
         blocks = []
         with self.c.lock:
             for i in range(req.count):
@@ -354,17 +385,61 @@ class MetaService(rpc.MetaServiceServicer, rpc.ClusterServiceServicer):
                 bid = "b-" + uuid.uuid4().hex
                 blocks.append(pb.BlockInfo(index=i, block_id=bid, token=common.block_token(bid, "W"),
                                            replicas=[self.c.dns[n]["address"] for n in nodes]))
-            self.c.uploads[upload_id] = {"path": path, "expires": now + 3600}
+            # la sesion de carga queda ligada al usuario, la ruta y los bloques que se le asignaron
+            prev = self.c.uploads.get(upload_id)      # se relee bajo el lock (reintentos en paralelo)
+            ids = {b.block_id for b in blocks} | (prev["blocks"] if prev else set())
+            self.c.uploads[upload_id] = {"uid": uid, "path": path, "expires": now + 3600, "blocks": ids}
         return pb.UploadPlan(upload_id=upload_id, block_size=common.BLOCK_SIZE,
                              min_replicas=common.MIN_REPLICAS, blocks=blocks)
+
+    def _check_commit(self, ctx, uid, path, req):
+        """Valida un Commit antes de llevarlo a Raft: sesion propia, bloques nuevos asignados en esa
+        sesion y guardados en >= MIN_REPLICAS DN distintos (recibos firmados), bloques reutilizados
+        solo de la version actual del mismo archivo, e indices/tamanos coherentes."""
+        def bad(code, msg):
+            log.warning("COMMIT RECHAZADO uid=%s path=%s: %s %s", uid, path, code, msg)
+            ctx.abort(grpc.StatusCode.FAILED_PRECONDITION, f"{code} {msg}")
+        up = self.c.uploads.get(req.upload_id)
+        if up is None or up["uid"] != uid or up["path"] != path:
+            bad("UNKNOWN_UPLOAD", f"la sesion {req.upload_id} no existe o no es de {path}")
+        cur = self.s.ns.get(path) or {}
+        cur_blocks = {b["block_id"] for b in cur.get("blocks", [])}
+        stale = req.base_version >= 0 and req.base_version != cur.get("version", 0)
+        addr_to_node = {d["address"]: n for n, d in self.c.dns.items()}
+        out, total = [], 0
+        for i, b in enumerate(req.blocks):
+            if b.index != i or b.length <= 0 or b.length > common.BLOCK_SIZE:
+                bad("BAD_BLOCK_LIST", f"indice/tamano invalido en el bloque {i}")
+            total += b.length
+            if b.block_id in up["blocks"]:
+                nodes = []
+                for r in b.receipts:
+                    addr = common.check_receipt(r, b.block_id, b.sha256, b.length)
+                    node = addr_to_node.get(addr)
+                    if node and node not in nodes:
+                        nodes.append(node)
+                if len(nodes) < common.MIN_REPLICAS:
+                    bad("INSUFFICIENT_REPLICAS", f"bloque {i}: {len(nodes)} copias con recibo valido")
+                out.append({"block_id": b.block_id, "length": b.length, "sha256": b.sha256, "replicas": nodes})
+            elif b.block_id in cur_blocks or stale:
+                # bloque sin cambios de la version base (copia en escritura); si la base cambio,
+                # la entrada Raft respondera VERSION_CONFLICT sin publicar nada
+                if not stale:
+                    prev = next(x for x in cur["blocks"] if x["block_id"] == b.block_id)
+                    if (prev["length"], prev["sha256"]) != (b.length, b.sha256):
+                        bad("BAD_BLOCK_LIST", f"bloque {i} no coincide con la version actual")
+                out.append({"block_id": b.block_id, "length": b.length, "sha256": b.sha256, "replicas": []})
+            else:
+                bad("FOREIGN_BLOCK", f"bloque {i} no pertenece a esta sesion ni a {path}")
+        if total != req.size:
+            bad("BAD_BLOCK_LIST", f"la suma de bloques ({total}) no coincide con size ({req.size})")
+        return out
 
     def Commit(self, req, ctx):
         self._require_leader(ctx)
         uid = self._uid(ctx)
         path = self._path(ctx, uid, req.path)
-        addr_to_node = {d["address"]: n for n, d in self.c.dns.items()}
-        blocks = [{"block_id": b.block_id, "length": b.length, "sha256": b.sha256,
-                   "replicas": [addr_to_node.get(a, a) for a in b.replicas]} for b in req.blocks]
+        blocks = self._check_commit(ctx, uid, path, req)
         res = self._call(ctx, self.s.commit, path, uid, req.base_version, req.fencing_token,
                          req.size, req.file_sha256, blocks, req.overwrite, time.time())
         self.c.uploads.pop(req.upload_id, None)
@@ -389,6 +464,8 @@ class MetaService(rpc.MetaServiceServicer, rpc.ClusterServiceServicer):
 
     def Status(self, req, ctx):
         self._require_leader(ctx)
+        if common.peer_role(ctx) != "node":
+            self._uid(ctx)                  # los clientes necesitan sesion valida
         now = time.time()
         status = self.s.getStatus()
         under = 0
@@ -406,6 +483,9 @@ class MetaService(rpc.MetaServiceServicer, rpc.ClusterServiceServicer):
 
     # ---------------- ClusterService ----------------
     def Heartbeat(self, req, ctx):
+        if common.peer_role(ctx) != "node":
+            log.warning("Heartbeat rechazado: el certificado no es de nodo (node_id=%s)", req.node_id)
+            ctx.abort(grpc.StatusCode.PERMISSION_DENIED, "NOT_A_NODE se requiere certificado de nodo")
         self._require_leader(ctx)
         now = time.time()
         with self.c.lock:
@@ -469,7 +549,10 @@ def replica_manager(state, cluster):
                         cluster.inflight[(b, t)] = now
                         log.info("RE-REPLICACION %s: %s -> %s", b[:12], src, t)
                 # recoleccion de basura diferida
-                expired = [b for b, t0 in cluster.pending_gc.items() if now - t0 > GC_GRACE and b not in refs]
+                for b in [b for b, t in cluster.pins.items() if t < now]:
+                    cluster.pins.pop(b)
+                expired = [b for b, t0 in cluster.pending_gc.items()
+                           if now - t0 > GC_GRACE and b not in refs and b not in cluster.pins]
                 for b in expired:
                     for n, d in cluster.dns.items():
                         if b in d["blocks"]:

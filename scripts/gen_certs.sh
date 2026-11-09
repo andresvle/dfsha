@@ -13,5 +13,5 @@ for name in node client; do
   openssl x509 -req -in $name.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out $name.crt -days 365 -extfile $name.ext
   rm -f $name.csr $name.ext
 done
-chmod 644 *.crt *.key
+chmod 644 *.crt; chmod 600 *.key
 echo "certificados en $(pwd)"

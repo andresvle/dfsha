@@ -10,6 +10,8 @@ mkdir -p /opt/dfsha /var/lib/dfsha
 aws s3 cp "s3://${BUCKET}/dfsha.tar.gz" /opt/dfsha/dfsha.tar.gz
 tar -xzf /opt/dfsha/dfsha.tar.gz -C /opt/dfsha
 aws s3 cp "s3://${BUCKET}/cluster.env" /opt/dfsha/cluster.env
+chmod 600 /opt/dfsha/cluster.env /opt/dfsha/certs/*.key
+rm -f /opt/dfsha/certs/ca.key /opt/dfsha/certs/ca.srl      # la clave de la CA no se necesita en ningun nodo
 cd /opt/dfsha
 docker build -t dfsha:latest .
 
@@ -31,13 +33,17 @@ case "$ROLE" in
       -e DFSHA_ADVERTISE="${MY_IP}:8000" \
       dfsha:latest python -m dfsha.data_server ;;
   client)
+    # el cliente no recibe secretos del cluster (JWT, tokens de bloque, KEK, Raft, usuarios)
+    # ni la clave de nodo: solo el nombre logico del servicio, el tamano de bloque y su certificado
+    grep -E '^DFSHA_(META|BLOCK_SIZE)=' /opt/dfsha/cluster.env > /opt/dfsha/client.env
+    rm -f /opt/dfsha/cluster.env /opt/dfsha/certs/node.key /opt/dfsha/certs/node.crt
     cat > /usr/local/bin/dfsha <<'EOF'
 #!/bin/sh
-exec docker run --rm -i --network host --env-file /opt/dfsha/cluster.env \
+exec docker run --rm -i --network host --env-file /opt/dfsha/client.env \
   -e DFSHA_SESSION=/work/.dfsha_session.json -e DFSHA_PASSWORD -e DFSHA_PARALLEL \
   -v /opt/dfsha/certs:/certs:ro -v "$PWD":/work -w /work dfsha:latest dfsha "$@"
 EOF
     chmod +x /usr/local/bin/dfsha
-    cp -r /opt/dfsha/tests /home/ec2-user/tests && chown -R ec2-user /home/ec2-user/tests ;;
+    rm -rf /home/ec2-user/tests && cp -r /opt/dfsha/tests /home/ec2-user/tests && chown -R ec2-user /home/ec2-user/tests ;;
 esac
 echo "DFSha $ROLE $NODE_ID listo" > /var/lib/dfsha/READY

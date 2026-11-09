@@ -1,0 +1,300 @@
+
+=================== 1. CARGA Y RECUPERACION (archivo grande particionado, hash identico) ===================
+Sesion iniciada como andres; directorio /users/andres
+259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b  grande.bin
+put grande.bin -> /users/andres/datos/grande.bin: 100.0 MB en 13 bloques, v3, 2.38 s (42.0 MB/s)
+sha256 259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b
+ruta: /users/andres/datos/grande.bin
+tipo: archivo
+tamano: 104857600 B  version: 3  sha256: 259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b
+  bloque 0: b-097c6efa3a97     8.0 MB  replicas=['172.31.0.234:8000', '172.31.6.145:8000', '172.31.11.233:8000']
+  bloque 1: b-ac6d56a2babd     8.0 MB  replicas=['172.31.6.145:8000', '172.31.0.234:8000', '172.31.13.18:8000']
+  bloque 2: b-3be4dac4605b     8.0 MB  replicas=['172.31.13.18:8000', '172.31.0.234:8000', '172.31.11.233:8000']
+  bloque 3: b-d29b48da9af7     8.0 MB  replicas=['172.31.13.18:8000', '172.31.6.145:8000', '172.31.11.233:8000']
+  bloque 4: b-efeac79ee8b8     8.0 MB  replicas=['172.31.11.233:8000', '172.31.0.234:8000', '172.31.6.145:8000']
+  bloque 5: b-aff07cb15caf     8.0 MB  replicas=['172.31.0.234:8000', '172.31.6.145:8000', '172.31.13.18:8000']
+  bloque 6: b-5358a19f8286     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+  bloque 7: b-182cbb640c87     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.6.145:8000']
+  bloque 8: b-0b045f9ad530     8.0 MB  replicas=['172.31.6.145:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+get /users/andres/datos/grande.bin -> recuperado.bin: 100.0 MB, v3, 1.11 s (89.9 MB/s), sha256 verificado
+259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b  recuperado.bin
+RESULTADO: hash IDENTICO
+[PASA] carga: hash del archivo recuperado identico al original
+[PASA] carga: archivo particionado en varios bloques (13)
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 1
+  dn-1   172.31.11.233:8000     ALIVE    bloques=78   usado=541.0 MB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=78   usado=541.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=78   usado=541.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=65   usado=449.0 MB
+
+=================== 2. ACCESO RF3 (open/read/write/lock/close con la semantica declarada) ===================
+Sesion iniciada como andres; directorio /users/andres
+put rf3.txt -> /users/andres/rf3.txt: 55 B en 1 bloques, v7, 0.12 s (0.0 MB/s)
+sha256 c2c76618a04c1461acb890e35e33d67ce1a6af1a0e712422e629d80cb22e0716
+--- read(offset=0, n=20)
+Hola DFSha. Linea or
+--- write(offset=5) modificacion parcial con lock
+lock EXCLUSIVE concedido, fencing_token=5
+write confirmado: /users/andres/rf3.txt v8, 55 B
+Hola MUNDO. Linea original del archivo de pruebas RF3.
+
+--- append (anexado)
+append confirmado: /users/andres/rf3.txt v9, 62 B
+Hola MUNDO. Linea original del archivo de pruebas RF3.
+ +anexo
+ruta: /users/andres/rf3.txt
+tipo: archivo
+tamano: 62 B  version: 9  sha256: 85afb3f7ca2beed84873cef78e59a124607b10ded1451c659f53910a445b2d87
+  bloque 0: b-6df0f6949a9f       62 B  replicas=['172.31.13.18:8000', '172.31.6.145:8000', '172.31.11.233:8000']
+[PASA] rf3: read(0,20) devuelve el prefijo
+[PASA] rf3: write parcial + append reflejados en el contenido final
+[PASA] rf3: anexo presente al final
+
+=================== 3. CONCURRENCIA (dos clientes sobre el mismo archivo/bloque) ===================
+Sesion iniciada como andres; directorio /users/andres
+put conc.txt -> /users/andres/conc.txt: 41 B en 1 bloques, v7, 0.13 s (0.0 MB/s)
+sha256 3ef4d655ed1629fe130e2db4fc2f8c81db29f4d724bcb84859139844e76e0df2
+--- cliente A toma el lock y retiene 8 s; cliente B intenta escribir el mismo bloque
+[B] ERROR LOCKED: LOCKED {'holder': 'c-71bf962b', 'expires': 1794186303.8905787}
+[A] lock EXCLUSIVE concedido, fencing_token=6
+[A] esperando 8.0 s antes de confirmar (con el lease tomado)...
+[A] write confirmado: /users/andres/conc.txt v8, 41 B
+--- contenido final (gana A; B fue rechazado con LOCKED):
+AAAAA00000000000000000000000000000000000
+[PASA] concurrencia: B recibe LOCKED mientras A tiene el lease
+[PASA] concurrencia: gana A (AAAAA) y no se mezclan bytes de B
+--- sin locks: B abre la version v, A confirma v+1 antes que B -> control optimista (VERSION_CONFLICT)
+[A2] write confirmado: /users/andres/conc.txt v9, 41 B
+[B2] esperando 6.0 s antes de confirmar...
+[B2] ERROR VERSION_CONFLICT: VERSION_CONFLICT {'current_version': 9}
+AAAAA00000CCCCC0000000000000000000000000
+[PASA] concurrencia: escritor con version vieja recibe VERSION_CONFLICT
+[PASA] concurrencia: la escritura rechazada no aparece (sin DDDDD)
+
+=================== 6. SEGURIDAD (acceso autorizado/denegado, canal y almacenamiento cifrados) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- captura del trafico hacia dn-1 mientras se sube un archivo con texto conocido
+put secreto.txt -> /users/andres/secreto.txt: 18 B en 1 bloques, v3, 0.11 s (0.0 MB/s)
+sha256 64be5e48a4d077948c4317d12e32ca6e273c12176c65d0c79362c92915e82713
+captura en dn-1 (puerto 8000): bytes_capturados=11192 lineas_con_texto_plano=0
+[PASA] seguridad: trafico capturado en el puerto 8000 sin texto plano
+--- juan intenta leer el archivo de andres
+Sesion iniciada como juan; directorio /users/juan
+ERROR NOT_OWNER: NOT_OWNER /users/andres/secreto.txt esta fuera de /users/juan
+ERROR NOT_OWNER: NOT_OWNER /users/andres esta fuera de /users/juan
+[PASA] seguridad: juan no puede leer ni listar el espacio de andres (NOT_OWNER)
+--- contrasena incorrecta
+ERROR BAD_CREDENTIALS: BAD_CREDENTIALS
+[PASA] seguridad: contrasena incorrecta rechazada (BAD_CREDENTIALS)
+--- conexiones sin certificado de cliente o sin TLS (mTLS exige certificado)
+TLS sin certificado de cliente: RECHAZADO (UNAVAILABLE)
+texto plano (sin TLS): RECHAZADO (UNAVAILABLE)
+[PASA] seguridad: conexiones sin certificado y en texto plano rechazadas
+--- bloques en disco de los 4 DN (cifrado AES-256-GCM, no aparece el texto plano):
+dn-1: archivos con texto plano = 0
+dn-2: archivos con texto plano = 0
+dn-3: archivos con texto plano = 0
+dn-4: archivos con texto plano = 0
+[PASA] seguridad: el texto plano no aparece en ningun bloque en disco
+[PASA] seguridad: el cliente no tiene secretos del cluster ni clave de nodo/CA
+Sesion iniciada como andres; directorio /users/andres
+
+=================== 5. CONSISTENCIA (replica desconectada durante una escritura) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- se desconecta dn-3 y se escribe
+dfsha
+
+2026-11-09 01:06:06,208 WARNING [client] DN 172.31.6.145:8000 no respondio para b-946d5f12a8; probando el siguiente
+put consist.bin -> /users/andres/consist.bin: 24.0 MB en 3 bloques, v2, 0.70 s (34.1 MB/s)
+sha256 5d200760ac313b45ff7289632132b825afd11dccd3ee67150329bbb20f8845d6
+  bloque 0: b-c1164cb07c2d     8.0 MB  replicas=['172.31.11.233:8000', '172.31.0.234:8000']
+  bloque 1: b-946d5f12a8a1     8.0 MB  replicas=['172.31.13.18:8000', '172.31.0.234:8000']
+  bloque 2: b-5a0eef5fd248     8.0 MB  replicas=['172.31.13.18:8000', '172.31.11.233:8000', '172.31.0.234:8000']
+--- lectores: la version confirmada se lee completa desde las replicas vivas
+get /users/andres/consist.bin -> consist_leido.bin: 24.0 MB, v2, 0.33 s (73.1 MB/s), sha256 verificado
+contenido identico
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+--- dn-3 regresa: se reincorpora y el gestor completa R=3
+dfsha
+
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 1
+  dn-1   172.31.11.233:8000     ALIVE    bloques=69   usado=465.0 MB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=71   usado=465.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=69   usado=457.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=58   usado=373.0 MB
+  bloque 0: b-c1164cb07c2d     8.0 MB  replicas=['172.31.11.233:8000', '172.31.6.145:8000', '172.31.0.234:8000', '172.31.13.18:8000']
+  bloque 1: b-946d5f12a8a1     8.0 MB  replicas=['172.31.0.234:8000', '172.31.13.18:8000', '172.31.6.145:8000', '172.31.11.233:8000']
+  bloque 2: b-5a0eef5fd248     8.0 MB  replicas=['172.31.11.233:8000', '172.31.13.18:8000', '172.31.0.234:8000']
+[FALLA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados
+
+=================== 4. REPLICACION Y FALLOS (caida de un DN y del lider MS) ===================
+Sesion iniciada como andres; directorio /users/andres
+  bloque 0: b-097c6efa3a97     8.0 MB  replicas=['172.31.11.233:8000', '172.31.6.145:8000', '172.31.0.234:8000']
+  bloque 1: b-ac6d56a2babd     8.0 MB  replicas=['172.31.6.145:8000', '172.31.0.234:8000', '172.31.13.18:8000']
+  bloque 2: b-3be4dac4605b     8.0 MB  replicas=['172.31.0.234:8000', '172.31.11.233:8000', '172.31.13.18:8000']
+--- se detiene dn-2
+dfsha
+
+2026-11-09 01:06:59,691 WARNING [client] replica 172.31.0.234:8000 fallo para b-ac6d56a2ba (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:06:59,696 WARNING [client] replica 172.31.0.234:8000 fallo para b-097c6efa3a (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:06:59,816 WARNING [client] replica 172.31.0.234:8000 fallo para b-efeac79ee8 (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:06:59,840 WARNING [client] replica 172.31.0.234:8000 fallo para b-aff07cb15c (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:06:59,948 WARNING [client] replica 172.31.0.234:8000 fallo para b-5358a19f82 (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:07:00,001 WARNING [client] replica 172.31.0.234:8000 fallo para b-0b045f9ad5 (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:07:00,017 WARNING [client] replica 172.31.0.234:8000 fallo para b-71a25c7f7e (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:07:00,114 WARNING [client] replica 172.31.0.234:8000 fallo para b-f64b33d545 (UNAVAILABLE); se usa la siguiente
+2026-11-09 01:07:00,239 WARNING [client] replica 172.31.0.234:8000 fallo para b-c857cdd356 (UNAVAILABLE); se usa la siguiente
+get /users/andres/datos/grande.bin -> tras_caida.bin: 100.0 MB, v3, 1.06 s (94.8 MB/s), sha256 verificado
+259d3a4cd0cf8f48635d82a926b5cb83eaeaa0136a5f866e8cedf59be4c59f9b  tras_caida.bin
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+--- esperando deteccion (DEAD) y re-replicacion...
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 1
+  dn-1   172.31.11.233:8000     ALIVE    bloques=72   usado=465.0 MB
+  dn-2   172.31.0.234:8000      DEAD     bloques=71   usado=465.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=71   usado=465.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=72   usado=465.0 MB
+MS consultado: ms-1  lider: ms-1.dfsha.internal:7000  bloques sub-replicados: 1
+  dn-1   172.31.11.233:8000     ALIVE    bloques=72   usado=465.0 MB
+  dn-2   172.31.0.234:8000      DEAD     bloques=71   usado=465.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=71   usado=465.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=72   usado=465.0 MB
+[PASA] fallos: dn-2 detectado como DEAD
+[FALLA] fallos: re-replicacion completa (0 bloques sub-replicados)
+write /dev/stdout: broken pipe
+--- se detiene el MS lider: ms-1.dfsha.internal:7000
+write /dev/stdout: broken pipe
+dfsha
+
+metadatos disponibles otra vez en 1.181348096 s
+MS consultado: ms-2  lider: ms-2.dfsha.internal:7000  bloques sub-replicados: 69
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+--- se restauran los nodos
+dfsha
+
+dfsha
+
+MS consultado: ms-2  lider: ms-2.dfsha.internal:7000  bloques sub-replicados: 1
+  dn-1   172.31.11.233:8000     ALIVE    bloques=73   usado=465.0 MB
+  dn-2   172.31.0.234:8000      ALIVE    bloques=71   usado=465.0 MB
+  dn-3   172.31.6.145:8000      ALIVE    bloques=72   usado=465.0 MB
+  dn-4   172.31.13.18:8000      ALIVE    bloques=73   usado=465.0 MB
+[PASA] fallos: tras restaurar, los 4 DN ALIVE
+
+=================== 8. AUDITORIA DE SEGURIDAD E INTEGRIDAD (hallazgos F01-F06 y R01 de la revision) ===================
+Sesion iniciada como andres; directorio /users/andres
+[PASA] A1 juan no puede stat archivo de andres :: NOT_OWNER
+[PASA] A2 ruta con .. hacia otro usuario rechazada :: NOT_OWNER
+[PASA] F01 commit con upload_id inventado, bloque inexistente y replicas repetidas se rechaza :: UNKNOWN_UPLOAD
+[PASA] F02 juan no puede publicar ni leer un bloque de andres conociendo su id :: commit=UNKNOWN_UPLOAD lectura_robada=False
+[PASA] F03 un block_id existente no acepta contenido distinto :: segundo_put=ALREADY_EXISTS BLOCK_EXISTS contenido distinto para un block_id existente contenido_final=b'A'
+[PASA] S1 DN rechaza token de bloque falsificado :: PERMISSION_DENIED BAD_BLOCK_TOKEN
+[PASA] R01a Status exige autenticacion (JWT) :: UNAUTHENTICATED AUTH_EXPIRED token invalido o vencido
+[PASA] R01b certificado de cliente no puede registrar un DN falso por Heartbeat :: PERMISSION_DENIED NOT_A_NODE se requiere certificado de nodo
+[PASA] F06 write muy lejos del final termina con resultado o DFSError controlado :: OK
+   esperando 80 s (GC_GRACE=60)...
+[PASA] F04 lector con open() previo sigue leyendo su version tras reemplazo + GC :: OK
+RESUMEN A1=PASA A2=PASA F01=PASA F02=PASA F03=PASA S1=PASA R01a=PASA R01b=PASA F06=PASA F04=PASA
+[PASA] auditoria: todas las comprobaciones de seguridad e integridad pasan
+
+=================== 9. DURABILIDAD DEL PLANO DE CONTROL (commit y caida inmediata de los 3 MS) ===================
+[PASA] R1 put/get multibloque identico, bloques en varios DN :: bloques=6 dn_distintos=4 replicas_min=3
+[PASA] R2 write parcial entre dos bloques + append con la semantica declarada :: len=41943166
+[PASA] R3 write mas alla del final rellena con ceros :: len=16777227
+[PASA] R4 segundo escritor recibe LOCKED mientras otro tiene el lease :: LOCKED
+[PASA] R5 escritor con version vieja recibe VERSION_CONFLICT y no pisa :: VERSION_CONFLICT
+[PASA] R6 commit con sesion valida pero bloque no guardado (sin recibos) se rechaza :: INSUFFICIENT_REPLICAS
+[PASA] R7 recibos falsificados o repetidos no cuentan como copias :: INSUFFICIENT_REPLICAS
+[PASA] R8 juan con sesion valida no puede referenciar bloque de andres (ni con base_version falsa) :: FOREIGN_BLOCK / VERSION_CONFLICT
+[PASA] R9 juan no puede usar la sesion de carga de andres :: UNKNOWN_UPLOAD
+ESTADO_GUARDADO
+RESUMEN R1=PASA R2=PASA R3=PASA R4=PASA R5=PASA R6=PASA R7=PASA R8=PASA R9=PASA
+[PASA] regresion: RF2/RF3, concurrencia y ataques con sesion valida
+--- docker kill simultaneo de ms-1, ms-2 y ms-3 inmediatamente despues del commit
+dfsha
+dfsha
+
+dfsha
+dfsha
+
+dfsha
+dfsha
+
+[PASA] R10 archivo confirmado justo antes de matar los 3 MS sobrevive :: OK
+[PASA] R11 archivo multibloque intacto tras reinicio total del plano de control :: OK
+RESUMEN R10=PASA R11=PASA
+[PASA] durabilidad: el ultimo commit sobrevive al reinicio abrupto de los 3 MS
+
+=================== 7. RENDIMIENTO (latencia y throughput bajo dos condiciones) ===================
+Sesion iniciada como andres; directorio /users/andres
+--- latencia de metadatos (20 x stat)
+stat promedio (incluye arranque del contenedor CLI): .526 s
+condicion   tamano_mb  operacion  segundos      mb_s
+paralelo=1  16         put        1.292979584   12.37
+paralelo=1  16         get        .809955602    19.75
+paralelo=4  16         put        1.108832356   14.42
+paralelo=4  16         get        .752546491    21.26
+paralelo=1  16         put        1.283104076   12.46
+paralelo=1  16         get        .821562003    19.47
+paralelo=4  16         put        1.067525114   14.98
+paralelo=4  16         get        .710917932    22.50
+paralelo=1  16         put        1.218209089   13.13
+paralelo=1  16         get        .748490029    21.37
+paralelo=4  16         put        .931617182    17.17
+paralelo=4  16         get        .711435788    22.48
+paralelo=1  64         put        3.082629043   20.76
+paralelo=1  64         get        1.568903651   40.79
+paralelo=4  64         put        1.758999386   36.38
+paralelo=4  64         get        1.335685122   47.91
+paralelo=1  64         put        3.044757499   21.01
+paralelo=1  64         get        1.590226659   40.24
+paralelo=4  64         put        1.882675640   33.99
+paralelo=4  64         get        1.362805441   46.96
+paralelo=1  64         put        3.140005787   20.38
+paralelo=1  64         get        1.524787929   41.97
+paralelo=4  64         put        1.941197724   32.96
+paralelo=4  64         get        1.282747718   49.89
+paralelo=1  256        put        12.964687826  19.74
+paralelo=1  256        get        6.517122322   39.28
+paralelo=4  256        put        7.119719424   35.95
+paralelo=4  256        get        4.988989394   51.31
+paralelo=1  256        put        12.519456868  20.44
+paralelo=1  256        get        6.676402308   38.34
+paralelo=4  256        put        8.389010895   30.51
+paralelo=4  256        get        5.409949644   47.32
+paralelo=1  256        put        12.561530139  20.37
+paralelo=1  256        get        7.649103245   33.46
+paralelo=4  256        put        6.851186013   37.36
+paralelo=4  256        get        4.933911529   51.88
+
+=================== RESUMEN ===================
+[PASA] carga: hash del archivo recuperado identico al original
+[PASA] carga: archivo particionado en varios bloques (13)
+[PASA] rf3: read(0,20) devuelve el prefijo
+[PASA] rf3: write parcial + append reflejados en el contenido final
+[PASA] rf3: anexo presente al final
+[PASA] concurrencia: B recibe LOCKED mientras A tiene el lease
+[PASA] concurrencia: gana A (AAAAA) y no se mezclan bytes de B
+[PASA] concurrencia: escritor con version vieja recibe VERSION_CONFLICT
+[PASA] concurrencia: la escritura rechazada no aparece (sin DDDDD)
+[PASA] seguridad: trafico capturado en el puerto 8000 sin texto plano
+[PASA] seguridad: juan no puede leer ni listar el espacio de andres (NOT_OWNER)
+[PASA] seguridad: contrasena incorrecta rechazada (BAD_CREDENTIALS)
+[PASA] seguridad: conexiones sin certificado y en texto plano rechazadas
+[PASA] seguridad: el texto plano no aparece en ningun bloque en disco
+[PASA] seguridad: el cliente no tiene secretos del cluster ni clave de nodo/CA
+[PASA] consistencia: con dn-3 desconectado la version confirmada se lee identica
+[PASA] consistencia: ningun bloque anuncia a dn-3 mientras esta caido
+[FALLA] consistencia: dn-3 reincorporado (ALIVE) y 0 bloques sub-replicados
+[PASA] fallos: con dn-2 caido el archivo se lee completo e identico
+[PASA] fallos: dn-2 detectado como DEAD
+[FALLA] fallos: re-replicacion completa (0 bloques sub-replicados)
+[PASA] fallos: nuevo lider elegido distinto de ms-1
+[PASA] fallos: escritura confirmada despues de la eleccion
+[PASA] fallos: tras restaurar, los 4 DN ALIVE
+[PASA] auditoria: todas las comprobaciones de seguridad e integridad pasan
+[PASA] regresion: RF2/RF3, concurrencia y ataques con sesion valida
+[PASA] durabilidad: el ultimo commit sobrevive al reinicio abrupto de los 3 MS
+pasan: 25  fallan: 2
+EXIT=1

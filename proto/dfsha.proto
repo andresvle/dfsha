@@ -28,6 +28,7 @@ message BlockInfo {
   string sha256 = 4;
   repeated string replicas = 5;   // direcciones host:puerto de los DN
   string token = 6;               // token de bloque firmado por el MS
+  repeated string receipts = 7;   // recibos firmados por cada DN que guardo el bloque (Commit)
 }
 
 message FileInfo {
@@ -44,6 +45,7 @@ message FileInfo {
 message AllocReq {
   string path = 1;
   int32 count = 2;          // cuantos bloques nuevos se necesitan
+  string upload_id = 3;     // opcional: agrega bloques a una sesion de carga existente (reintentos)
 }
 message UploadPlan {
   string upload_id = 1;
@@ -116,7 +118,8 @@ message BlockChunk {
   repeated string pipeline = 4;   // DN restantes a los que reenviar
   bytes data = 5;
 }
-message BlockAck { string block_id = 1; repeated string stored_on = 2; string sha256 = 3; int64 length = 4; string error = 5; }
+message BlockAck { string block_id = 1; repeated string stored_on = 2; string sha256 = 3; int64 length = 4; string error = 5;
+                   repeated string receipts = 6; }  // un recibo HMAC por cada DN de stored_on
 message GetBlockReq { string block_id = 1; string token = 2; }
 
 service DataService {
